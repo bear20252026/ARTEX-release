@@ -69,10 +69,10 @@ jobs:
             echo "::group::Build $pkg"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
               go build -tags embedui -trimpath -ldflags "-s -w" \
-              -o "build/artex-$VERSION-$GOOS-$GOARCH$ext" ./cmd/artex
+              -o "build/artex-$GOOS-$GOARCH$ext" ./cmd/artex
             echo "::endgroup::"
             mkdir -p "pack/$pkg"
-            cp "build/artex$ext" "pack/$pkg/artex$ext"
+            cp "build/artex-$GOOS-$GOARCH$ext" "pack/$pkg/artex$ext"
             for f in start.sh start.bat config.example.json README.md CHANGELOG.md; do
               [ -f "$f" ] && cp "$f" "pack/$pkg/"
             done
