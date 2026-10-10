@@ -107,6 +107,6 @@ jobs:
             ## 许可与限制
             - 源码许可证 AGPL-3.0;本仓库仅为预编译分发,源码公开可用。
             - 上游作者附加限制:仅供本地学习研究与隔离环境验证,**严禁对任何线上/第三方系统发起实际扫描、测试或攻击**。
-        files: |
-          release/*.zip
-          release/SHA256SUMS.txt
+          files: |
+            release/*.zip
+            release/SHA256SUMS.txt
