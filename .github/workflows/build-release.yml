@@ -69,7 +69,7 @@ jobs:
             echo "::group::Build $pkg"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
               go build -tags embedui -trimpath -ldflags "-s -w" \
-              -o "build/artex$ext" ./cmd/artex
+              -o "build/artex-$VERSION-$GOOS-$GOARCH$ext" ./cmd/artex
             echo "::endgroup::"
             mkdir -p "pack/$pkg"
             cp "build/artex$ext" "pack/$pkg/artex$ext"
