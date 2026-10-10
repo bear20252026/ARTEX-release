@@ -1,0 +1,112 @@
+name: build-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "源码 ref( bear20252026/ARTEX 的 tag 或分支)"
+        required: false
+        default: "v0.3.12"
+      version:
+        description: "发布版本号(用于 tag 与文件名,不带 v 前缀也可)"
+        required: false
+        default: "0.3.12"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout ARTEX source
+        uses: actions/checkout@v4
+        with:
+          repository: bear20252026/ARTEX
+          ref: ${{ github.event.inputs.source_ref || 'v0.3.12' }}
+          fetch-depth: 1
+
+      - name: Record source commit
+        id: src
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+
+      - name: Build frontend (static export)
+        run: |
+          cd web
+          npm ci --no-audit --no-fund
+          npm run build:static
+
+      - name: Embed frontend
+        run: |
+          rm -rf server/webui/dist
+          mkdir -p server/webui
+          cp -r web/out server/webui/dist
+
+      - name: Build cross-platform binaries and packages
+        run: |
+          set -euo pipefail
+          VERSION="${{ github.event.inputs.version || '0.3.12' }}"
+          VERSION="${VERSION#v}"
+          mkdir -p release build
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS="${target%%/*}"; GOARCH="${target##*/}"
+            ext=""; [ "$GOOS" = "windows" ] && ext=".exe"
+            pkg="artex-$VERSION-$GOOS-$GOARCH"
+            echo "::group::Build $pkg"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -tags embedui -trimpath -ldflags "-s -w" \
+              -o "build/artex$ext" ./cmd/artex
+            echo "::endgroup::"
+            mkdir -p "pack/$pkg"
+            cp "build/artex$ext" "pack/$pkg/artex$ext"
+            for f in start.sh start.bat config.example.json README.md CHANGELOG.md; do
+              [ -f "$f" ] && cp "$f" "pack/$pkg/"
+            done
+            (cd "pack/$pkg" && zip -qr "$GITHUB_WORKSPACE/release/$pkg.zip" .)
+          done
+          (cd release && sha256sum ./*.zip > SHA256SUMS.txt)
+          ls -lh release/
+
+      - name: Smoke test binaries (-h)
+        run: |
+          ./build/artex-linux-amd64 -h > /dev/null
+          echo "linux/amd64 binary smoke test passed"
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version || '0.3.12' }}
+          name: "ARTEX v${{ github.event.inputs.version || '0.3.12' }} prebuilt (云端预编译)"
+          draft: false
+          prerelease: false
+          body: |
+            ARTEX v${{ github.event.inputs.version || '0.3.12' }} 预编译二进制(由 GitHub Actions 云端构建)。
+
+            - 源码来源: bear20252026/ARTEX @ `${{ steps.src.outputs.sha }}` (v${{ github.event.inputs.version || '0.3.12' }}, fork 自 mhtsec/ARTEX 纯源码备份)
+            - 构建方式: 前端 Next.js 静态导出后经 go:embed 内嵌,`CGO_ENABLED=0 go build -tags embedui`
+            - 产物: linux/amd64、linux/arm64、darwin/amd64、darwin/arm64、windows/amd64
+            - 校验: 见 SHA256SUMS.txt
+
+            ## 使用
+            解压后运行 `start.sh`(Linux/macOS)或 `start.bat`(Windows),默认前端+API 在 `:8787`,流量代理在 `:8788`。首次访问 `http://localhost:8787/setup` 初始化。需要 PostgreSQL 与 LLM API Key(Anthropic/OpenAI 兼容),详见包内 README。
+
+            ## 许可与限制
+            - 源码许可证 AGPL-3.0;本仓库仅为预编译分发,源码公开可用。
+            - 上游作者附加限制:仅供本地学习研究与隔离环境验证,**严禁对任何线上/第三方系统发起实际扫描、测试或攻击**。
+        files: |
+          release/*.zip
+          release/SHA256SUMS.txt
